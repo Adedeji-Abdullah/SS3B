@@ -57,3 +57,22 @@ The browser is a client of Next.js route handlers. The route handlers are the se
 5. Students can enter their names at `/` to sign in; no pre-registration is required. `/admin` can also be used to add names ahead of time or review student activity.
 
 The admin password and session secret must be managed as deployment secrets in production. Never use the example values in a deployed environment.
+
+## Deploy to Render
+
+Create a Render **Web Service** from this repository and configure:
+
+- **Build Command:** `npm install && npm run build`
+- **Start Command:** `npm run start`
+
+`npm run build` generates the Prisma client. At startup, `npm run start` applies checked-in database migrations and binds Next.js to Render's interface.
+
+This project currently uses SQLite. In Render's **Disks** settings, attach a persistent disk mounted at `/var/data`, then set these environment variables in the service dashboard:
+
+- `DATABASE_URL` = `file:/var/data/class-voice.db`
+- `SESSION_SECRET` = a unique random value of at least 32 characters
+- `ADMIN_PASSWORD` = the admin password you want to use on the deployed site
+
+Do not upload `.env`; Render does not read your local environment file. Without a persistent disk, SQLite data may be lost when Render replaces the service instance. If your Render plan does not support persistent disks, switch the Prisma datasource to PostgreSQL and use a Render PostgreSQL database before accepting real votes.
+
+The previously displayed “Could not reach the server” text is from an older frontend version. Push the latest code and trigger a new Render deployment. If submissions still fail after redeploying, inspect the service logs for errors from `prisma migrate deploy` or the `/api/votes` route.
