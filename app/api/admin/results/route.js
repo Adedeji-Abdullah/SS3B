@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { connectToDatabase } from "@/lib/mongodb";
 import { RATING_VALUES, SUBJECTS } from "@/lib/subjects";
 
 export async function GET() {
@@ -9,11 +9,13 @@ export async function GET() {
     return NextResponse.json({ error: "Administrator access required." }, { status: 403 });
   }
 
-  const [ratings, totalStudents, totalVotes] = await Promise.all([
-    prisma.rating.findMany({ select: { subject: true, percentage: true } }),
-    prisma.student.count(),
-    prisma.vote.count(),
+  const db = await connectToDatabase();
+  const [votes, totalStudents, totalVotes] = await Promise.all([
+    db.collection("votes").find({}, { projection: { ratings: 1 } }).toArray(),
+    db.collection("students").countDocuments(),
+    db.collection("votes").countDocuments(),
   ]);
+  const ratings = votes.flatMap((vote) => vote.ratings ?? []);
 
   const results = SUBJECTS.map((subject) => {
     const subjectRatings = ratings.filter((rating) => rating.subject === subject);

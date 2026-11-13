@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { ObjectId } from "mongodb";
 import { getSession } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { connectToDatabase } from "@/lib/mongodb";
 
 export async function GET() {
   const session = await getSession();
@@ -12,17 +13,26 @@ export async function GET() {
     return NextResponse.json({ role: "admin" });
   }
 
-  const student = await prisma.student.findUnique({
-    where: { id: session.id },
-    select: { id: true, name: true, vote: { select: { id: true } } },
-  });
+  if (!ObjectId.isValid(session.id)) {
+    return NextResponse.json({ error: "Student session is invalid. Sign in again." }, { status: 401 });
+  }
+
+  const db = await connectToDatabase();
+  const student = await db.collection("students").findOne(
+    { _id: new ObjectId(session.id) },
+    { projection: { _id: 1, name: 1 } },
+  );
   if (!student) {
     return NextResponse.json({ error: "Student account no longer exists." }, { status: 401 });
   }
+  const vote = await db.collection("votes").findOne(
+    { studentId: student._id },
+    { projection: { _id: 1 } },
+  );
 
   return NextResponse.json({
     role: "student",
-    student: { id: student.id, name: student.name },
-    hasVoted: Boolean(student.vote),
+    student: { id: student._id.toString(), name: student.name },
+    hasVoted: Boolean(vote),
   });
 }

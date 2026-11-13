@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
+import { ObjectId } from "mongodb";
 import { getSession } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { connectToDatabase } from "@/lib/mongodb";
 import { RATING_VALUES, SUBJECTS } from "@/lib/subjects";
 
 export async function POST(request) {
   const session = await getSession();
   if (!session || session.role !== "student") {
     return NextResponse.json({ error: "Sign in as a student to submit ratings." }, { status: 401 });
+  }
+  if (!ObjectId.isValid(session.id)) {
+    return NextResponse.json({ error: "Student session is invalid. Sign in again." }, { status: 401 });
   }
 
   const body = await request.json().catch(() => null);
@@ -35,26 +39,34 @@ export async function POST(request) {
   }
 
   try {
-    const vote = await prisma.vote.create({
-      data: {
-        studentId: session.id,
-        ratings: {
-          create: SUBJECTS.map((subject) => ({
-            subject,
-            percentage: normalizedRatings.get(subject),
-          })),
-        },
-      },
-      select: { id: true, submittedAt: true },
-    });
-
-    return NextResponse.json({ submitted: true, vote }, { status: 201 });
-  } catch (error) {
-    if (error?.code === "P2002") {
-      return NextResponse.json({ error: "A vote has already been submitted for this student." }, { status: 409 });
-    }
-    if (error?.code === "P2003") {
+    const db = await connectToDatabase();
+    const studentId = new ObjectId(session.id);
+    const studentExists = await db.collection("students").findOne(
+      { _id: studentId },
+      { projection: { _id: 1 } },
+    );
+    if (!studentExists) {
       return NextResponse.json({ error: "Student account not found. Sign in again." }, { status: 401 });
+    }
+
+    const vote = {
+      _id: new ObjectId(),
+      studentId,
+      submittedAt: new Date(),
+      ratings: SUBJECTS.map((subject) => ({
+        subject,
+        percentage: normalizedRatings.get(subject),
+      })),
+    };
+    await db.collection("votes").insertOne(vote);
+
+    return NextResponse.json({
+      submitted: true,
+      vote: { id: vote._id.toString(), submittedAt: vote.submittedAt },
+    }, { status: 201 });
+  } catch (error) {
+    if (error?.code === 11000) {
+      return NextResponse.json({ error: "A vote has already been submitted for this student." }, { status: 409 });
     }
 
     console.error("Vote submission failed:", error);
