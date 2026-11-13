@@ -1,0 +1,36 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Student {
+  id             String   @id @default(cuid())
+  name           String
+  normalizedName String   @unique
+  createdAt      DateTime @default(now())
+  vote           Vote?
+}
+
+model Vote {
+  id          String   @id @default(cuid())
+  studentId   String   @unique
+  submittedAt DateTime @default(now())
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  ratings     Rating[]
+}
+
+model Rating {
+  id         String   @id @default(cuid())
+  voteId     String
+  subject    String
+  percentage Int
+  createdAt  DateTime @default(now())
+  vote       Vote     @relation(fields: [voteId], references: [id], onDelete: Cascade)
+
+  @@unique([voteId, subject])
+  @@index([subject])
+}
