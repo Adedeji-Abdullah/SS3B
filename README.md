@@ -1,6 +1,6 @@
 # Class Voice
 
-A teacher-rating and voting app built with Next.js, JSX, Tailwind CSS, Prisma, and SQLite.
+A teacher-rating and voting app built with Next.js, JSX, Tailwind CSS, Prisma, and MongoDB.
 
 ## Architecture
 
@@ -12,7 +12,8 @@ The browser is a client of Next.js route handlers. The route handlers are the se
 - `Vote` belongs to one `Student`. A unique `studentId` ensures each normalized name has at most one vote.
 - `Rating` belongs to one `Vote` and stores a subject and percentage. A unique `(voteId, subject)` pair prevents duplicate subject ratings in a vote.
 - The API validates the subject list and allowed 10–100% increments. It creates the vote and all 12 ratings in one nested database operation.
-- SQLite is the local development database. For multi-instance production hosting, use PostgreSQL and set `DATABASE_URL` to the managed database connection string.
+- MongoDB stores each model in its own collection. The schema uses ObjectId identifiers and Prisma relations; unique indexes enforce one student account per normalized name and one vote per student.
+- Vote submission creates the vote and its 12 ratings as a nested write. MongoDB must run as a replica set (MongoDB Atlas does) because Prisma uses transactions for nested writes.
 
 ### Authentication and authorization
 
@@ -45,12 +46,12 @@ The browser is a client of Next.js route handlers. The route handlers are the se
 ## Run locally
 
 1. Install dependencies: `npm install`
-2. Copy `.env.example` to `.env` and set a strong `ADMIN_PASSWORD` and random `SESSION_SECRET` (at least 32 characters).
-3. Generate the Prisma client and create the local database:
+2. Copy `.env.example` to `.env`. Set `DATABASE_URL` to your MongoDB connection string, plus a strong `ADMIN_PASSWORD` and random `SESSION_SECRET` (at least 32 characters). URL-encode any special characters in the database username or password.
+3. Generate the Prisma client and synchronize the schema/indexes to MongoDB:
 
    ```powershell
    npm run db:generate
-   npm run db:migrate -- --name init
+   npm run db:push
    ```
 
 4. Start the app: `npm run dev`
@@ -65,14 +66,14 @@ Create a Render **Web Service** from this repository and configure:
 - **Build Command:** `npm install && npm run build`
 - **Start Command:** `npm run start`
 
-`npm run build` generates the Prisma client. At startup, `npm run start` applies checked-in database migrations and binds Next.js to Render's interface.
+`npm run build` generates the Prisma client. `npm run start` binds Next.js to Render's interface. Prisma MongoDB does not use Prisma Migrate; run `npm run db:push` once against the configured MongoDB database to create collections and unique indexes.
 
-This project currently uses SQLite. In Render's **Disks** settings, attach a persistent disk mounted at `/var/data`, then set these environment variables in the service dashboard:
+In Render's environment settings, configure:
 
-- `DATABASE_URL` = `file:/var/data/class-voice.db`
+- `DATABASE_URL` = your MongoDB Atlas connection string, including a database name
 - `SESSION_SECRET` = a unique random value of at least 32 characters
 - `ADMIN_PASSWORD` = the admin password you want to use on the deployed site
 
-Do not upload `.env`; Render does not read your local environment file. Without a persistent disk, SQLite data may be lost when Render replaces the service instance. If your Render plan does not support persistent disks, switch the Prisma datasource to PostgreSQL and use a Render PostgreSQL database before accepting real votes.
+In MongoDB Atlas, allow connections from your Render service and ensure the database user has read/write permissions for the database. Do not upload `.env`; Render does not read your local environment file. Run `npm run db:push` from an environment configured with Render's `DATABASE_URL` before accepting votes. Do not run `prisma migrate deploy`; that command is for relational databases and is not supported by this MongoDB datasource.
 
-The previously displayed “Could not reach the server” text is from an older frontend version. Push the latest code and trigger a new Render deployment. If submissions still fail after redeploying, inspect the service logs for errors from `prisma migrate deploy` or the `/api/votes` route.
+The previously displayed “Could not reach the server” text is from an older frontend version. Push the latest code and trigger a new Render deployment. If submissions still fail after redeploying, inspect Render's service logs for connection or authorization errors from MongoDB and the `/api/votes` route.
