@@ -57,7 +57,7 @@ The browser is a client of Next.js route handlers. The route handlers are the se
 4. Start the app: `npm run dev`
 5. Students can enter their names at `/` to sign in; no pre-registration is required. `/admin` can also be used to add names ahead of time or review student activity.
 
-The admin password and session secret must be managed as deployment secrets in production. Never use the example values in a deployed environment.
+The admin password and session secret must be managed as deployment secrets in production. Never use the example values in a deployed environment. The local `.env` must also use a real MongoDB connection string; URLs beginning with `file:` are not supported.
 
 ## Deploy to Render
 
@@ -66,7 +66,7 @@ Create a Render **Web Service** from this repository and configure:
 - **Build Command:** `npm install && npm run build`
 - **Start Command:** `npm run start`
 
-`npm run build` generates the Prisma client. `npm run start` binds Next.js to Render's interface. Prisma MongoDB does not use Prisma Migrate; run `npm run db:push` once against the configured MongoDB database to create collections and unique indexes.
+`npm run build` generates the Prisma client. `npm run start` binds Next.js to Render's interface. Use `npm run db:push` once against the configured MongoDB database to create collections and unique indexes.
 
 In Render's environment settings, configure:
 
@@ -74,6 +74,6 @@ In Render's environment settings, configure:
 - `SESSION_SECRET` = a unique random value of at least 32 characters
 - `ADMIN_PASSWORD` = the admin password you want to use on the deployed site
 
-In MongoDB Atlas, allow connections from your Render service and ensure the database user has read/write permissions for the database. Do not upload `.env`; Render does not read your local environment file. Run `npm run db:push` from an environment configured with Render's `DATABASE_URL` before accepting votes. Do not run `prisma migrate deploy`; that command is for relational databases and is not supported by this MongoDB datasource.
+In MongoDB Atlas, allow connections from your Render service and ensure the database user has read/write permissions for the database. Do not upload `.env`; Render does not read your local environment file. Run `npm run db:push` from an environment configured with Render's `DATABASE_URL` before accepting votes. This database provider uses `prisma db push` rather than Prisma Migrate.
 
 The previously displayed “Could not reach the server” text is from an older frontend version. Push the latest code and trigger a new Render deployment. If submissions still fail after redeploying, inspect Render's service logs for connection or authorization errors from MongoDB and the `/api/votes` route.
