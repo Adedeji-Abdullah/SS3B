@@ -20,11 +20,12 @@ export default function VotePage() {
     let active = true;
     fetch("/api/auth/me")
       .then(async (response) => {
+        const body = await response.json();
         if (!response.ok) {
           router.push("/");
           return null;
         }
-        return response.json();
+        return body;
       })
       .then((body) => {
         if (!active || !body) return;
@@ -41,6 +42,7 @@ export default function VotePage() {
       .finally(() => {
         if (active) setLoading(false);
       });
+
     return () => {
       active = false;
     };
@@ -59,49 +61,35 @@ export default function VotePage() {
   async function submitVote() {
     setSubmitting(true);
     setError("");
-
-    let response;
     try {
-      response = await fetch("/api/votes", {
+      if (!student) {
+        setError("Your session has expired. Sign in again.");
+        return;
+      }
+      const response = await fetch("/api/votes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ratings: SUBJECTS.map((subject) => ({ subject, percentage: ratings[subject] })),
         }),
       });
+      const body = await response.json();
+      if (!response.ok) {
+        setError(body.error || "The server could not save your ratings. Please try again.");
+        if (response.status === 409) setHasVoted(true);
+        return;
+      }
+      if (!body.submitted) {
+        setError("The server response was incomplete. Please try again.");
+        return;
+      }
+      setHasVoted(true);
+      setSuccess(true);
     } catch {
-      setError("Could not connect to the server. Check your internet connection and try again.");
+      setError("Could not connect to the server. Check your connection and try again.");
+    } finally {
       setSubmitting(false);
-      return;
     }
-
-    const responseText = await response.text();
-    let body;
-    try {
-      body = responseText ? JSON.parse(responseText) : {};
-    } catch {
-      body = {};
-    }
-
-    if (!response.ok) {
-      setError(
-        body.error ||
-          `The server could not save your ratings (error ${response.status}). Please try again or contact the administrator.`,
-      );
-      if (response.status === 409) setHasVoted(true);
-      setSubmitting(false);
-      return;
-    }
-
-    if (!body.submitted) {
-      setError("The server response was incomplete. Check your connection before trying again.");
-      setSubmitting(false);
-      return;
-    }
-
-    setHasVoted(true);
-    setSuccess(true);
-    setSubmitting(false);
   }
 
   if (loading) {
@@ -128,6 +116,7 @@ export default function VotePage() {
             <p className="text-sm font-semibold uppercase tracking-[0.16em] text-indigo-600">Student dashboard</p>
             <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">Rate your teachers</h1>
             <p className="mt-2 text-slate-500">Choose a percentage for every subject. Your submission can only be made once.</p>
+            <p className="mt-2 text-sm text-slate-500">Ratings are recorded securely when you submit your vote.</p>
           </div>
           {!hasVoted && !success ? (
             <div className="min-w-52 rounded-2xl border border-slate-200 bg-white p-4">
@@ -144,7 +133,7 @@ export default function VotePage() {
             <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-emerald-100 text-2xl text-emerald-700">✓</div>
             <h2 className="mt-4 text-2xl font-bold text-slate-900">{success ? "Ratings recorded successfully" : "Your vote has been recorded"}</h2>
             <p className="mx-auto mt-2 max-w-lg text-slate-500">
-              Thank you, {student?.name}. The system has recorded one submission for this roster entry.
+              Thank you, {student?.name}. Your ratings have been recorded.
             </p>
             <button onClick={signOut} className="mt-6 rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white hover:bg-slate-700">
               Done

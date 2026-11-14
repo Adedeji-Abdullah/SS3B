@@ -1,76 +1,57 @@
 # Class Voice
 
-A teacher-rating and voting app built with Next.js, JSX, Tailwind CSS, and the official MongoDB Node.js driver.
+A teacher-rating and voting application built with Next.js, JSX, Tailwind CSS, Express, and MongoDB.
 
 ## Architecture
 
-The browser is a client of Next.js route handlers. The route handlers are the security boundary: they authenticate signed, HttpOnly sessions, verify roles, validate vote contents, and persist all votes directly through the MongoDB Node.js driver. The UI never decides whether a vote is valid or whether a student has voted already.
+- `server.js` hosts Next.js and the Express backend.
+- `app/page.jsx` provides student name sign-in.
+- `app/vote/page.jsx` handles rating selection, review, and one-time submission.
+- `app/admin/page.jsx` provides administrator results, visualizations, and roster management.
+- `lib/subjects.js` contains the shared subject list, rating values, and student-name normalization.
 
-### Database
+MongoDB stores student records in `students` and one vote document per student in `votes`. A unique index on normalized student names prevents duplicate student records, while a unique index on vote `studentId` is the authoritative duplicate-submission guard. The server validates the complete set of subjects and rating values before writing a vote.
 
-- `students` stores each student's name, normalized unique name, MongoDB ObjectId, and creation time.
-- `votes` stores one document per student, with all 12 subject ratings embedded in that document. A unique index on `studentId` and MongoDB's atomic document insert ensure only one vote can be stored for each student.
-- The API validates the complete subject list and allowed 10–100% increments before inserting a vote.
-- Required unique indexes are ensured when the backend connects and can also be created explicitly using `npm run db:setup`.
+Student sign-in asks only for a name, as requested. This does not prove a student's real-world identity: another person can sign in using that student's name. Use individual student credentials or invitation codes if identity verification is required.
 
-### Authentication and authorization
+## Configuration
 
-- Students enter any name. The server normalizes it, finds or creates a student record, and issues a signed, HttpOnly, SameSite=Strict cookie.
-- Admins sign in with `ADMIN_PASSWORD`, configured outside source control. Admin APIs check the signed session role on every request.
-- Student vote submission takes its student ID only from the verified session cookie, never from the request body.
-- Name-only student sign-in does not verify a student's real-world identity. It prevents duplicate database submissions for the same normalized name, but cannot prevent impersonation or a person entering a different name. Use individual credentials or one-time invitation codes if identity verification is required.
+Set these environment variables for local development and deployment:
 
-### API routes
+- `MONGODB_URI`: MongoDB connection string including a database name. `DATABASE_URL` is accepted as an alias.
+- `SESSION_SECRET`: random secret of at least 32 characters used to sign session cookies.
+- `ADMIN_PASSWORD`: administrator password.
+- `PORT`: optional; defaults to `3000`.
 
-| Route | Access | Purpose |
-|---|---|---|
-| `POST /api/auth/student` | Public | Create/find a student by name and sign in |
-| `POST /api/auth/admin` | Public | Sign in with the configured admin password |
-| `GET /api/auth/me` | Signed-in user | Return the current session and vote status |
-| `POST /api/auth/logout` | Public | Clear the session cookie |
-| `POST /api/votes` | Student | Validate and persist the student's one-time 12-subject vote |
-| `GET /api/admin/results` | Admin | Aggregate totals, averages, distributions, and rankings from database rows |
-| `GET /api/admin/students` | Admin | List roster entries and submission status |
-| `POST /api/admin/students` | Admin | Add a student to the eligible roster |
-
-### Frontend structure
-
-- `app/page.jsx`: student name sign-in and admin sign-in link.
-- `app/vote/page.jsx`: subject ratings, review-before-submit, and confirmation.
-- `app/admin/page.jsx`: results, rating visualizations, rankings, and roster management.
-- `app/api/**/route.js`: server-side API handlers.
-- `lib/auth.js`, `lib/mongodb.js`, `lib/subjects.js`: session, MongoDB connection/indexes, and validation helpers.
+Copy `.env.example` to `.env` for local development and replace each placeholder. Never commit `.env` or use example values in production. In MongoDB Atlas, allow network access from the deployment service and grant the database user read/write permissions.
 
 ## Run locally
 
-1. Install dependencies: `npm install`
-2. Copy `.env.example` to `.env`. Set `DATABASE_URL` to your MongoDB connection string, plus a strong `ADMIN_PASSWORD` and random `SESSION_SECRET` (at least 32 characters). URL-encode any special characters in the database username or password.
-3. Create the required unique indexes in MongoDB:
+1. Install packages: `npm install`
+2. Configure `.env`.
+3. Start Next.js and Express together: `npm run dev`
+4. Open the URL printed by the server.
 
-   ```powershell
-   npm run db:setup
-   ```
+Use `/` for student sign-in and `/admin` for the administrator dashboard.
 
-4. Start the app: `npm run dev`
-5. Students can enter their names at `/` to sign in; no pre-registration is required. `/admin` can also be used to add names ahead of time or review student activity.
+## API routes
 
-The admin password and session secret must be managed as deployment secrets in production. Never use the example values in a deployed environment. The local `.env` must also use a real MongoDB connection string; URLs beginning with `file:` are not supported.
+| Route | Access | Purpose |
+|---|---|---|
+| `POST /api/auth/student` | Public | Find or create a student by normalized name and sign in |
+| `POST /api/auth/admin` | Public | Sign in with `ADMIN_PASSWORD` |
+| `GET /api/auth/me` | Signed-in user | Return current user and, for students, vote status |
+| `POST /api/auth/logout` | Public | Clear the signed session cookie |
+| `POST /api/votes` | Student | Validate and submit one rating per subject |
+| `GET /api/admin/results` | Admin | Aggregate totals, averages, distributions, and rankings |
+| `GET /api/admin/students` | Admin | List students and submission status |
+| `POST /api/admin/students` | Admin | Add a student to the roster |
 
-## Deploy to Render
+## Deploy
 
-Create a Render **Web Service** from this repository and configure:
+For a Render Web Service, use:
 
 - **Build Command:** `npm install && npm run build`
 - **Start Command:** `npm run start`
 
-`npm run build` builds Next.js. `npm run start` binds Next.js to Render's interface. Run `npm run db:setup` once with Render's `DATABASE_URL` to create the required unique indexes. The backend also ensures these indexes when it first connects.
-
-In Render's environment settings, configure:
-
-- `DATABASE_URL` = your MongoDB Atlas connection string, including a database name
-- `SESSION_SECRET` = a unique random value of at least 32 characters
-- `ADMIN_PASSWORD` = the admin password you want to use on the deployed site
-
-In MongoDB Atlas, allow connections from your Render service and ensure the database user has read/write permissions for the database. Do not upload `.env`; Render does not read your local environment file. Run `npm run db:setup` from an environment configured with Render's `DATABASE_URL` before accepting votes.
-
-The previously displayed “Could not reach the server” text is from an older frontend version. Push the latest code and trigger a new Render deployment. If submissions still fail after redeploying, inspect Render's service logs for connection or authorization errors from MongoDB and the `/api/votes` route.
+Configure `MONGODB_URI`, `SESSION_SECRET`, and `ADMIN_PASSWORD` in the service's environment settings. Do not upload `.env`; deployment providers use their own environment variables.

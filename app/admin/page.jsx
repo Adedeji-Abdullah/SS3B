@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { RATING_VALUES } from "@/lib/subjects";
 
@@ -15,8 +14,13 @@ function StatCard({ label, value, note }) {
   );
 }
 
+async function readResponse(response) {
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error || "The server could not complete this request.");
+  return body;
+}
+
 export default function AdminPage() {
-  const router = useRouter();
   const [signedIn, setSignedIn] = useState(false);
   const [password, setPassword] = useState("");
   const [results, setResults] = useState(null);
@@ -32,44 +36,28 @@ export default function AdminPage() {
       fetch("/api/admin/results"),
       fetch("/api/admin/students"),
     ]);
-    if (resultsResponse.status === 403 || studentsResponse.status === 403) {
-      setSignedIn(false);
-      return false;
-    }
-    const [resultBody, studentBody] = await Promise.all([resultsResponse.json(), studentsResponse.json()]);
-    if (!resultsResponse.ok || !studentsResponse.ok) {
-      throw new Error(resultBody.error || studentBody.error || "Could not load admin data.");
-    }
+    const [resultBody, studentBody] = await Promise.all([
+      readResponse(resultsResponse),
+      readResponse(studentsResponse),
+    ]);
     setResults(resultBody);
     setStudents(studentBody.students);
     setSignedIn(true);
-    return true;
   }, []);
 
   useEffect(() => {
     let active = true;
-    Promise.all([fetch("/api/admin/results"), fetch("/api/admin/students")])
-      .then(async ([resultsResponse, studentsResponse]) => {
-        if (resultsResponse.status === 403 || studentsResponse.status === 403) {
-          return null;
-        }
-        const [resultBody, studentBody] = await Promise.all([
-          resultsResponse.json(),
-          studentsResponse.json(),
-        ]);
-        if (!resultsResponse.ok || !studentsResponse.ok) {
-          throw new Error(resultBody.error || studentBody.error || "Could not load admin data.");
-        }
-        return { resultBody, studentBody };
+    fetch("/api/auth/me")
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return response.json();
       })
-      .then((data) => {
-        if (!active || !data) return;
-        setResults(data.resultBody);
-        setStudents(data.studentBody.students);
-        setSignedIn(true);
+      .then(async (body) => {
+        if (!active || body?.role !== "admin") return;
+        await loadData();
       })
       .catch((loadError) => {
-        if (active) setError(loadError.message);
+        if (active) setError(loadError.message || "Could not load administrator data.");
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -78,7 +66,7 @@ export default function AdminPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [loadData]);
 
   async function signIn(event) {
     event.preventDefault();
@@ -90,14 +78,11 @@ export default function AdminPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password }),
       });
-      const body = await response.json();
-      if (!response.ok) {
-        setError(body.error || "Admin sign-in failed.");
-        return;
-      }
+      await readResponse(response);
+      setPassword("");
       await loadData();
     } catch (signInError) {
-      setError(signInError.message || "Could not sign in.");
+      setError(signInError.message || "Administrator sign-in failed.");
     } finally {
       setBusy(false);
     }
@@ -105,23 +90,19 @@ export default function AdminPage() {
 
   async function addStudent(event) {
     event.preventDefault();
-    setError("");
     setBusy(true);
+    setError("");
     try {
       const response = await fetch("/api/admin/students", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: newName }),
       });
-      const body = await response.json();
-      if (!response.ok) {
-        setError(body.error || "Student could not be added.");
-        return;
-      }
+      await readResponse(response);
       setNewName("");
       await loadData();
     } catch (addError) {
-      setError(addError.message || "Could not add student.");
+      setError(addError.message || "Student could not be added.");
     } finally {
       setBusy(false);
     }
@@ -130,7 +111,18 @@ export default function AdminPage() {
   async function signOut() {
     await fetch("/api/auth/logout", { method: "POST" });
     setSignedIn(false);
-    router.push("/");
+    setResults(null);
+    setStudents([]);
+  }
+
+  async function refreshData() {
+    setError("");
+    try {
+      await loadData();
+    } catch (refreshError) {
+      setError(refreshError.message || "Could not refresh results.");
+      if (refreshError.message === "Please sign in to continue.") setSignedIn(false);
+    }
   }
 
   const mostVotes = useMemo(
@@ -149,12 +141,12 @@ export default function AdminPage() {
           <Link href="/" className="text-sm font-semibold text-indigo-600">← Back to student sign in</Link>
           <p className="mt-8 text-sm font-semibold uppercase tracking-[0.16em] text-indigo-600">Restricted access</p>
           <h1 className="mt-2 text-3xl font-bold text-slate-900">Administrator sign in</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-500">Results and roster management are available only to the administrator.</p>
+          <p className="mt-2 text-sm leading-6 text-slate-500">Results and roster management require the administrator password.</p>
           <form onSubmit={signIn} className="mt-6 space-y-4">
             <label htmlFor="admin-password" className="block text-sm font-medium text-slate-700">Admin password</label>
             <input id="admin-password" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} className="w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100" />
             {error ? <p role="alert" className="text-sm text-rose-600">{error}</p> : null}
-            <button disabled={busy} className="w-full rounded-xl bg-slate-900 px-4 py-3 font-semibold text-white hover:bg-slate-700 disabled:opacity-60">{busy ? "Signing in…" : "Sign in securely"}</button>
+            <button disabled={busy} className="w-full rounded-xl bg-slate-900 px-4 py-3 font-semibold text-white hover:bg-slate-700 disabled:opacity-60">{busy ? "Signing in…" : "Sign in"}</button>
           </form>
         </section>
       </main>
@@ -177,6 +169,7 @@ export default function AdminPage() {
         <div className="mb-7 flex flex-wrap gap-2">
           <button onClick={() => setSection("results")} className={`rounded-xl px-4 py-2.5 text-sm font-semibold ${section === "results" ? "bg-indigo-600 text-white" : "border border-slate-200 bg-white text-slate-600"}`}>Results</button>
           <button onClick={() => setSection("students")} className={`rounded-xl px-4 py-2.5 text-sm font-semibold ${section === "students" ? "bg-indigo-600 text-white" : "border border-slate-200 bg-white text-slate-600"}`}>Student roster</button>
+          <button onClick={refreshData} className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">Refresh results</button>
         </div>
 
         {error ? <p role="alert" className="mb-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{error}</p> : null}
@@ -186,12 +179,12 @@ export default function AdminPage() {
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <StatCard label="Rostered students" value={results.totalStudents} note="Eligible to submit one vote" />
               <StatCard label="Votes received" value={results.totalVotes} note="Unique student submissions" />
-              <StatCard label="Participation" value={`${(results.participation * 100).toFixed(1)}%`} note="Votes received ÷ students" />
+              <StatCard label="Participation" value={`${(results.participation * 100).toFixed(1)}%`} note="Of rostered students" />
               <StatCard label="Subjects rated" value={results.results.filter((item) => item.totalVotes > 0).length} note={`Out of ${results.results.length} subjects`} />
             </div>
 
             <section className="mt-7 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
-              <div className="mb-5"><h2 className="text-xl font-bold text-slate-900">Subject averages</h2><p className="mt-1 text-sm text-slate-500">Average percentage score from recorded ratings.</p></div>
+              <div className="mb-5"><h2 className="text-xl font-bold text-slate-900">Subject averages</h2><p className="mt-1 text-sm text-slate-500">Average percentage score from submitted ratings.</p></div>
               <div className="space-y-4">
                 {results.ranking.map((item, index) => (
                   <div key={item.subject} className="grid gap-2 sm:grid-cols-[2rem_13rem_1fr_5rem] sm:items-center">
@@ -205,7 +198,7 @@ export default function AdminPage() {
             </section>
 
             <section className="mt-7 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-              <div className="border-b border-slate-100 px-5 py-5 sm:px-7"><h2 className="text-xl font-bold text-slate-900">Ratings and distribution</h2><p className="mt-1 text-sm text-slate-500">Count at each percentage selection, computed from stored votes.</p></div>
+              <div className="border-b border-slate-100 px-5 py-5 sm:px-7"><h2 className="text-xl font-bold text-slate-900">Ratings and distribution</h2><p className="mt-1 text-sm text-slate-500">Aggregated directly from recorded votes.</p></div>
               <div className="overflow-x-auto">
                 <table className="min-w-[900px] w-full text-left text-sm">
                   <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
@@ -253,7 +246,7 @@ export default function AdminPage() {
         {section === "students" ? (
           <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
             <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-              <div><h2 className="text-xl font-bold text-slate-900">Student activity</h2><p className="mt-1 text-sm text-slate-500">Students can enter their own names to vote; this list shows names that have signed in or were added here.</p></div>
+              <div><h2 className="text-xl font-bold text-slate-900">Student activity</h2><p className="mt-1 text-sm text-slate-500">Roster entries and vote submission status.</p></div>
               <form onSubmit={addStudent} className="flex w-full gap-2 sm:max-w-md">
                 <input required maxLength={100} value={newName} onChange={(event) => setNewName(event.target.value)} placeholder="Student’s full name" className="min-w-0 flex-1 rounded-xl border border-slate-200 px-4 py-2.5 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100" />
                 <button disabled={busy} className="rounded-xl bg-indigo-600 px-4 py-2.5 font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">Add student</button>
@@ -264,7 +257,7 @@ export default function AdminPage() {
                 <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3">Student</th><th className="px-4 py-3">Rostered</th><th className="px-4 py-3">Vote status</th></tr></thead>
                 <tbody>
                   {students.map((student) => <tr key={student.id} className="border-t border-slate-100"><td className="px-4 py-3 font-medium text-slate-800">{student.name}</td><td className="px-4 py-3 text-slate-500">{new Date(student.createdAt).toLocaleDateString()}</td><td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${student.vote ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{student.vote ? "Submitted" : "Not voted"}</span></td></tr>)}
-                  {!students.length ? <tr><td colSpan="3" className="px-4 py-8 text-center text-slate-500">No student activity yet. Students will appear here after signing in.</td></tr> : null}
+                  {!students.length ? <tr><td colSpan="3" className="px-4 py-8 text-center text-slate-500">No students on the roster yet.</td></tr> : null}
                 </tbody>
               </table>
             </div>

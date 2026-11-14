@@ -60,7 +60,7 @@ export default function HomePage() {
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-indigo-600">Student access</p>
             <h2 className="mt-2 text-2xl font-bold">Enter your name</h2>
             <p className="mt-2 text-sm leading-6 text-slate-500">
-              Any student can continue by entering their name. Use the same name if you return later.
+              Enter your name to continue to the class voting page.
             </p>
           </div>
 
@@ -88,8 +88,7 @@ export default function HomePage() {
           </form>
 
           <p className="mt-5 text-xs leading-5 text-slate-500">
-            Name-only access does not verify identity. Do not treat it as protection against someone
-            using another student’s name.
+            Name-only access does not verify identity.             Anyone who knows a student&apos;s name could sign in as them.
           </p>
           <div className="mt-7 border-t border-slate-100 pt-5 text-center">
             <Link href="/admin" className="text-sm font-semibold text-slate-600 hover:text-indigo-600">
